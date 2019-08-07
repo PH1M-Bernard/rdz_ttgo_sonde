@@ -11,12 +11,14 @@
 extern U8X8_SSD1306_128X64_NONAME_SW_I2C *u8x8;
 extern SX1278FSK sx1278;
 
-RXTask rxtask = { -1, -1, -1, -1, 0 };
+RXTask rxtask = { -1, -1, -1, 0xFFFF, 0 };
 
 const char *evstring[]={"NONE", "KEY1S", "KEY1D", "KEY1M", "KEY1L", "KEY2S", "KEY2D", "KEY2M", "KEY2L",
                                "VIEWTO", "RXTO", "NORXTO", "(max)"};
 
 const char *RXstr[]={"RX_OK", "RX_TIMEOUT", "RX_ERROR", "RX_UNKNOWN"};
+
+int getKeyPressEvent(); /* in RX_FSK.ino */
 
 /* Task model:
  * There is a background task for all SX1278 interaction.
@@ -32,21 +34,39 @@ const char *RXstr[]={"RX_OK", "RX_TIMEOUT", "RX_ERROR", "RX_UNKNOWN"};
  *    value of receiveResult (or timeout, if receiveResult was not set within 1s). It
  *    should also return immediately if there is some keyboard input.
  */   
+int initlevels[40];
 
 Sonde::Sonde() {
-	config.button_pin = 0;
-	config.button2_pin = T4 + 128;     // T4 == GPIO13, should be ok for v1 and v2
-	config.touch_thresh = 60;
+	for (int i = 0; i < 39; i++) {
+		initlevels[i] = gpio_get_level((gpio_num_t)i);
+  	}
+	for (int i = 0; i < 39*3; i++) {
+		initlevels[i%39] += gpio_get_level((gpio_num_t)(i%39));
+  	}
+	sondeList = (SondeInfo *)malloc((MAXSONDE+1)*sizeof(SondeInfo));
+	memset(sondeList, 0, (MAXSONDE+1)*sizeof(SondeInfo));
+	config.touch_thresh = 70;
 	config.led_pout = 9;	
 	// Try autodetecting board type
   	// Seems like on startup, GPIO4 is 1 on v1 boards, 0 on v2.1 boards?
-   	int autodetect = gpio_get_level((gpio_num_t)4); 
-	if(autodetect==1) {
+	config.gps_rxd = -1;
+	config.gps_txd = -1;
+	if(initlevels[16]==0) {
 		config.oled_sda = 4;
 		config.oled_scl = 15;
+		config.button_pin = 0;
+		config.button2_pin = T4 + 128;     // T4 == GPIO13
 	} else {
 		config.oled_sda = 21;
 		config.oled_scl = 22;
+		if(initlevels[17]==0) { // T-Beam
+			config.button_pin = 39;
+			config.button2_pin = T4 + 128;  // T4 == GPIO13
+			config.gps_rxd = 12;
+		} else {
+			config.button_pin = 2 + 128;     // GPIO2 / T2
+			config.button2_pin = 14 + 128;   // GPIO14 / T6
+		}
 	}
 	//
 	config.oled_rst = 16;
@@ -65,8 +85,12 @@ Sonde::Sonde() {
 	config.marker=0;
 	config.showafc=0;
 	config.freqofs=0;
-	config.rs41.agcbw=25000;
-	config.rs41.rxbw=12000;
+	config.rs41.agcbw=12500;
+	config.rs41.rxbw=6300;
+	config.rs92.rxbw=12500;
+	config.rs92.alt2d=480;
+	config.dfm.agcbw=20800;
+	config.dfm.rxbw=10400;
 	config.udpfeed.active = 1;
 	config.udpfeed.type = 0;
 	strcpy(config.udpfeed.host, "192.168.42.20");
@@ -113,6 +137,10 @@ void Sonde::setConfig(const char *cfg) {
 		config.oled_scl = atoi(val);
 	} else if(strcmp(cfg,"oled_rst")==0) {
 		config.oled_rst = atoi(val);
+	} else if(strcmp(cfg,"gps_rxd")==0) {
+		config.gps_rxd = atoi(val);
+	} else if(strcmp(cfg,"gps_txd")==0) {
+		config.gps_txd = atoi(val);
 	} else if(strcmp(cfg,"maxsonde")==0) {
 		config.maxsonde = atoi(val);
 		if(config.maxsonde>MAXSONDE) config.maxsonde=MAXSONDE;
@@ -143,6 +171,14 @@ void Sonde::setConfig(const char *cfg) {
 		config.rs41.agcbw = atoi(val);
 	} else if(strcmp(cfg,"rs41.rxbw")==0) {
 		config.rs41.rxbw = atoi(val);
+	} else if(strcmp(cfg,"dfm.agcbw")==0) {
+		config.dfm.agcbw = atoi(val);
+	} else if(strcmp(cfg,"dfm.rxbw")==0) {
+		config.dfm.rxbw = atoi(val);
+	} else if(strcmp(cfg,"rs92.alt2d")==0) {
+		config.rs92.alt2d= atoi(val);
+	} else if(strcmp(cfg,"rs92.rxbw")==0) {
+		config.rs92.rxbw = atoi(val);
 	} else if(strcmp(cfg,"axudp.active")==0) {
 		config.udpfeed.active = atoi(val)>0;
 	} else if(strcmp(cfg,"axudp.host")==0) {
@@ -234,9 +270,6 @@ void Sonde::setup() {
 		Serial.println(rxtask.currentSonde);
 		rxtask.currentSonde = 0;
 	}
-	// TODO: maybe better done in arduino task, not in rx task
-	sondeList[rxtask.currentSonde].lastState = -1;
-	sondeList[rxtask.currentSonde].viewStart = millis();
 
 	// update receiver config
 	Serial.print("\nSonde::setup() on sonde index ");
@@ -286,20 +319,31 @@ void Sonde::receive() {
                         si->lastState = 0;
                 }
         }
+	Serial.printf("debug: res was %d, now lastState is %d\n", res, si->lastState);
 
 
 	// we should handle timer events here, because after returning from receive,
 	// we'll directly enter setup
-	int event = timeoutEvent();
-	int action = disp.layout->actions[event];
+	rxtask.receiveSonde = rxtask.currentSonde; // pass info about decoded sonde to main loop
+
+	int event = getKeyPressEvent();
+	if (!event) event = timeoutEvent(si);
+	int action = (event==EVT_NONE) ? ACT_NONE : disp.layout->actions[event];
+	Serial.printf("event %x: action is %x\n", event, action);
+	// If action is to move to a different sonde index, we do update things here, set activate
+	// to force the sx1278 task to call sonde.setup(), and pass information about sonde to
+	// main loop (display update...)
 	if(action == ACT_NEXTSONDE || action==ACT_PREVSONDE) {
 		// handled here...
 		nextRxSonde();
-		rxtask.requestSonde = rxtask.currentSonde;
-		res = 0xFF00 | res;
-	} else {
-		res = (action<<8) | res;
+		action = ACT_SONDE(rxtask.currentSonde);
+		if(rxtask.activate==-1) {
+			// race condition here. maybe better use mutex. TODO
+			rxtask.activate = action;
+		}
 	}
+	res = (action<<8) | (res&0xff);
+	Serial.printf("receive Result is %04x\n", res);
 	// let waitRXcomplete resume...
 	rxtask.receiveResult = res;
 }
@@ -308,7 +352,14 @@ void Sonde::receive() {
 uint16_t Sonde::waitRXcomplete() {
 	uint16_t res=0;
         uint32_t t0 = millis();
+rxloop:
         while( rxtask.receiveResult==0xFFFF && millis()-t0 < 2000) { delay(50); }
+	if( rxtask.receiveResult == RX_UPDATERSSI ) {
+		Serial.println("RSSI update");
+		rxtask.receiveResult = 0xFFFF;
+		disp.updateDisplayRSSI();
+		goto rxloop;
+	}
 
 	if( rxtask.receiveResult==0xFFFF) {
 		res = RX_TIMEOUT;
@@ -316,56 +367,77 @@ uint16_t Sonde::waitRXcomplete() {
 		res = rxtask.receiveResult;
 	}
         rxtask.receiveResult = 0xFFFF;
-        Serial.printf("waitRXcomplete returning %04x (%s)\n", res, RXstr[res&0xff]);
-#if 0
-//currently not used...
-{
-	int res;
-	switch(sondeList[rxtask.currentSonde].type) {
+	/// TODO: THis has caused an exception when swithcing back to spectrumm...
+        Serial.printf("waitRXcomplete returning %04x (%s)\n", res, (res&0xff)<4?RXstr[res&0xff]:"");
+	// currently used only by RS92
+	switch(sondeList[rxtask.receiveSonde].type) {
 	case STYPE_RS41:
-		res = rs41.waitRXcomplete();
+		rs41.waitRXcomplete();
 		break;
 	case STYPE_RS92:
-		res = rs92.waitRXcomplete();
+		rs92.waitRXcomplete();
 		break;
 	case STYPE_DFM06:
 	case STYPE_DFM09:
-		res = dfm.waitRXcomplete();
+		dfm.waitRXcomplete();
 		break;
 	}
-#endif
 	memmove(sonde.si()->rxStat+1, sonde.si()->rxStat, 17);
         sonde.si()->rxStat[0] = res;
 	return res;
 }
 
-uint8_t Sonde::timeoutEvent() {
+uint8_t Sonde::timeoutEvent(SondeInfo *si) {
 	uint32_t now = millis();
 #if 1
 	Serial.printf("Timeout check: %d - %d vs %d; %d - %d vs %d; %d - %d vs %d\n",
-		now, sonde.si()->viewStart, disp.layout->timeouts[0],
-		now, sonde.si()->rxStart, disp.layout->timeouts[1],
-		now, sonde.si()->norxStart, disp.layout->timeouts[2]);
+		now, si->viewStart, disp.layout->timeouts[0],
+		now, si->rxStart, disp.layout->timeouts[1],
+		now, si->norxStart, disp.layout->timeouts[2]);
 #endif
-	Serial.printf("lastState is %d\n", sonde.si()->lastState);
-	if(disp.layout->timeouts[0]>=0 && now - sonde.si()->viewStart >= disp.layout->timeouts[0]) {
+	Serial.printf("lastState is %d\n", si->lastState);
+	if(disp.layout->timeouts[0]>=0 && now - si->viewStart >= disp.layout->timeouts[0]) {
 		Serial.println("View timer expired");
 		return EVT_VIEWTO;
 	}
-	if(sonde.si()->lastState==1 && disp.layout->timeouts[1]>=0 && now - sonde.si()->rxStart >= disp.layout->timeouts[1]) {
+	if(si->lastState==1 && disp.layout->timeouts[1]>=0 && now - si->rxStart >= disp.layout->timeouts[1]) {
 		Serial.println("RX timer expired");
 		return EVT_RXTO;
 	}
-	if(sonde.si()->lastState==0 && disp.layout->timeouts[2]>=0 && now - sonde.si()->norxStart >= disp.layout->timeouts[2]) {
+	if(si->lastState==0 && disp.layout->timeouts[2]>=0 && now - si->norxStart >= disp.layout->timeouts[2]) {
 		Serial.println("NORX timer expired");
 		return EVT_NORXTO;
 	}
 	return 0;
 }
 
-int Sonde::updateState(int8_t event) {
+uint8_t Sonde::updateState(uint8_t event) {
 	Serial.printf("Sonde::updateState for event %d\n", event);
-	if(event==ACT_NONE) return -1;
+	// No change
+	if(event==ACT_NONE) return 0xFF;
+
+	// In all cases (new display mode, new sonde) we reset the mode change timers
+	sonde.sondeList[sonde.currentSonde].viewStart = millis();
+        sonde.sondeList[sonde.currentSonde].lastState = -1;
+
+	// Moving to a different display mode
+	if (event==ACT_DISPLAY_SPECTRUM || event==ACT_DISPLAY_WIFI) {
+		// main loop will call setMode() and disable sx1278 background task
+		return event;
+	}
+	int n = event;
+	if(event==ACT_DISPLAY_DEFAULT) {
+		n = config.display;
+	}
+	if(n>=0&&n<5) {
+		Serial.printf("Setting display mode %d\n", n);
+		disp.setLayout(n);
+		sonde.clearDisplay();
+		return 0xFF;
+	}		
+
+	// Moving to a different value for currentSonde
+	// TODO: THis should be done in sx1278 task, not in main loop!!!!!
 	if(event==ACT_NEXTSONDE) {
 		sonde.nextConfig();
 		Serial.printf("advancing to next sonde %d\n", sonde.currentSonde);
@@ -377,20 +449,11 @@ int Sonde::updateState(int8_t event) {
 		sonde.nextConfig();
 		return ACT_NEXTSONDE;
 	}
-	if (event==ACT_DISPLAY_SPECTRUM || event==ACT_DISPLAY_WIFI) {
-		return event;
-	}
-	int n = event;
-	if(event==ACT_DISPLAY_DEFAULT) {
-		n = config.display;
-	}
-	if(n>=0&&n<4) {
-		disp.setLayout(n);
-		clearDisplay();
-		updateDisplay();
+	if(event&0x80) {
+		sonde.currentSonde = (event&0x7F);
 		return ACT_NEXTSONDE;
-	}		
-	return -1;
+	}
+	return 0xFF;
 }
 
 void Sonde::updateDisplayPos() {
@@ -421,23 +484,10 @@ void Sonde::updateDisplayIP() {
 	disp.updateDisplayIP();
 }
 
-// Probing RS41
-// 40x.xxx MHz
 void Sonde::updateDisplayScanner() {
 	disp.setLayout(0);
 	disp.updateDisplay();
 	disp.setLayout(config.display);
-#if 0
-	char buf[16];
-	u8x8->setFont(u8x8_font_7x14_1x2_r);
-	u8x8->drawString(0, 0, "Scan:");
-	u8x8->drawString(8, 0,  sondeTypeStr[si()->type]);
-	snprintf(buf, 16, "%3.3f MHz", si()->freq);
-	u8x8->drawString(0,3, buf);
-	snprintf(buf, 16, "%s", si()->launchsite);
-	u8x8->drawString(0,5, buf);	
-	updateDisplayIP();
-#endif
 }
 
 void Sonde::updateDisplay()

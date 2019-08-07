@@ -16,14 +16,20 @@ struct DispEntry {
 
 struct DispInfo {
         DispEntry *de;
-        int8_t *actions;
+        uint8_t *actions;
         int16_t *timeouts;
 };
 
 
 class Display {
 private:
+	void freeLayouts();
+	int allocDispInfo(int entries, DispInfo *d);
+	void parseDispElement(char *text, DispEntry *de);
+
 public:
+	void initFromFile();
+
 	void setLayout(DispInfo *layout);
 	DispInfo *layout;
 
@@ -43,7 +49,7 @@ public:
 	static void drawIP(DispEntry *de);
 	static void drawSite(DispEntry *de);
 	static void drawTelemetry(DispEntry *de);
-	static void drawGPSdist(DispEntry *de);
+	static void drawGPS(DispEntry *de);
 	static void drawText(DispEntry *de);
 	void clearIP();
 	void setIP(const char *ip, bool AP);

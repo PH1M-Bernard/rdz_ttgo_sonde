@@ -103,11 +103,11 @@ int RS41::setup(float frequency)
 #endif
 
 	if(sx1278.setAFCBandwidth(sonde.config.rs41.agcbw)!=0) {
-		RS41_DBG(Serial.println("Setting AFC bandwidth 25 kHz FAILED"));
+		RS41_DBG(Serial.printf("Setting AFC bandwidth %d Hz FAILED", sonde.config.rs41.agcbw));
 		return 1;
 	}
 	if(sx1278.setRxBandwidth(sonde.config.rs41.rxbw)!=0) {
-		RS41_DBG(Serial.println("Setting RX bandwidth 12kHz FAILED"));
+		RS41_DBG(Serial.printf("Setting RX bandwidth to %d Hz FAILED", sonde.config.rs41.rxbw));
 		return 1;
 	}
 	// Enable auto-AFC, auto-AGC, RX Trigger by preamble
@@ -363,7 +363,10 @@ static void posrs41(const byte b[], uint32_t b_len, uint32_t p)
    Serial.print(getcard16(b, b_len, p+18UL)&255UL);
    Serial.print("Sats");
    sonde.si()->alt = heig;
-   sonde.si()->validPos = true;
+   if( 0==(int)(lat*10000) && 0==(int)(long0*10000) )
+      sonde.si()->validPos = 0;
+   else
+      sonde.si()->validPos = 0x3f;
 } /* end posrs41() */
 
 
@@ -476,7 +479,6 @@ static uint8_t scramble[64] = {150U,131U,62U,81U,177U,73U,8U,152U,50U,5U,89U,
 int RS41::receive() {
 	sx1278.setPayloadLength(RS41MAXLEN-8); 
 	int e = sx1278.receivePacketTimeout(1000, data+8);
-	rxtask.lastSonde = rxtask.currentSonde;
 	if(e) { Serial.println("TIMEOUT"); return RX_TIMEOUT; } 
 
         for(int i=0; i<RS41MAXLEN; i++) { data[i] = reverse(data[i]); }

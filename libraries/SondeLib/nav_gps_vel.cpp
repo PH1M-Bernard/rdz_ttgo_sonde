@@ -6,7 +6,13 @@
            - Borre: http://kom.aau.dk/~borre
            - Essential GNSS Project (hier und da etwas unklar)
 */
+#include <math.h>
 #include <inttypes.h>
+#include <SPIFFS.h>
+#include <Arduino.h>
+#include <stdio.h>
+
+#include "nav_gps_vel.h"
 
 #ifndef PI
 #define  PI  (3.1415926535897932384626433832795)
@@ -68,65 +74,6 @@ void rotZ(double x1, double y1, double z1, double angle, double *x2, double *y2,
 
 
 /* ---------------------------------------------------------------------------------------------------- */
-
-
-typedef struct {
-    uint16_t prn;
-    uint16_t week;
-    uint32_t toa;
-    char   epoch[20];
-    double toe;
-    double toc;
-    double e;
-    double delta_n;
-    double delta_i;
-    double i0;
-    double OmegaDot;
-    double sqrta;
-    double Omega0;
-    double w;
-    double M0;
-    double tgd;
-    double idot;
-    double cuc;
-    double cus;
-    double crc;
-    double crs;
-    double cic;
-    double cis;
-    double af0;
-    double af1;
-    double af2;
-    int gpsweek;
-    uint16_t svn;
-    uint8_t  ura;
-    uint8_t  health;
-    uint8_t  conf;
-} EPHEM_t;
-
-typedef struct {
-    uint32_t t;
-    double pseudorange;
-    double pseudorate;
-    double clock_corr;
-    double clock_drift;
-    double X;
-    double Y;
-    double Z;
-    double vX;
-    double vY;
-    double vZ;
-    int ephhr;
-    double PR;
-    double ephtime;
-    int prn;
-} SAT_t;
-
-typedef struct {double X; double Y; double Z;} LOC_t;
-
-typedef struct {double  X;  double Y;  double Z;
-                double vX; double vY; double vZ;} VEL_t;
-
 
 /* ---------------------------------------------------------------------------------------------------- */
 
@@ -435,8 +382,22 @@ EPHEM_t *read_RNXpephs(const char *file) {
         while ((c=fgetc(fp)) != '\n') { if (c == EOF) break; }  */
 
         ephem.week = 1; // ephem.gpsweek
-	Serial.printf("Reading ephem for prn %d\n", ui);
+	//Serial.printf("Reading ephem for prn %d\n", ui);
 	if(ui<33) {
+#if 0
+		// no need to do it the difficult way, most recent data is at end of file :-)
+		double tdiff;
+		if(te[ui].prn!=ui) {
+			tdiff = WEEKSEC;
+		} else {
+			tdiff = now - te[ui].toe;
+			if(tdiff>WEEKSEC/2) tdiff -= WEEKSEC;
+			if(tdiff<-WEEKSEC/2) tdiff += WEEKSEC;
+		}
+		double td = now - ephem.toe;
+		if(td>WEEKSEC/2) td -= WEEKSEC;
+		if(td<-WEEKSEC/2) td += WEEKSEC;
+#endif		
 		te[ui] = ephem;
 	} else {
 		Serial.printf("bad prn: %d\n", ui);
