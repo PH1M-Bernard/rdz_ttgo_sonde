@@ -348,6 +348,21 @@ const char *createStatusForm() {
   return message;
 }
 
+const char *createStatusJSONForm() {
+  char *ptr = message;
+  strcpy(ptr, "[");
+  
+  for (int i = 0; i < sonde.nSonde; i++) {
+    SondeInfo *s = &sonde.sondeList[(i + sonde.currentSonde) % sonde.nSonde];
+    sprintf(ptr + strlen(ptr), "{\"lat\":\"%.6f\",\"lon\":\"%.6f\",\"alt\":\"%.4f\"}", s->lat, s->lon, s->alt);
+    
+  }
+  strcat(ptr, "]");
+  
+  return message;
+}
+
+
 ///////////////////// Config form
 
 
@@ -683,6 +698,9 @@ void SetupAsyncServer() {
   server.on("/status.html", HTTP_GET,  [](AsyncWebServerRequest * request) {
     request->send(200, "text/html", createStatusForm());
   });
+  server.on("/status.json", HTTP_GET,  [](AsyncWebServerRequest * request) {
+    request->send(200, "text/json", createStatusJSONForm());
+  });
   server.on("/update.html", HTTP_GET,  [](AsyncWebServerRequest * request) {
     request->send(200, "text/html", createUpdateForm(0));
   });
@@ -712,6 +730,16 @@ void SetupAsyncServer() {
     request->send(SPIFFS, "/style.css", "text/css");
   });
 
+  // Route to load earthmaths.js file
+  server.on("/earthmaths.js", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send(SPIFFS, "/earthmaths.js", "text/javascript");
+  });
+
+    // Route to load location.html file
+  server.on("/location.html", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send(SPIFFS, "/location.html", "text/html");
+  });
+  
   // Route to set GPIO to HIGH
   server.on("/test.php", HTTP_POST, [](AsyncWebServerRequest * request) {
     //digitalWrite(ledPin, HIGH);
@@ -1093,10 +1121,7 @@ void setup()
   setupChannelList();
 #if 0
   sonde.clearSonde();
-  sonde.addSonde(402.700, STYPE_RS41);
-  sonde.addSonde(405.700, STYPE_RS41);
-  sonde.addSonde(405.900, STYPE_RS41);
-  sonde.addSonde(403.450, STYPE_DFM09);
+  sonde.addSonde(403.900, STYPE_RS41);
   Serial.println("No channel config file, using defaults!");
   Serial.println();
 #endif
@@ -1826,8 +1851,6 @@ void execOTA() {
   // Back to some normal state
   enterMode(ST_DECODER);
 }
-
-
 
 void loop() {
   Serial.printf("\nRunning main loop in state %d. free heap: %d;\n", mainState, ESP.getFreeHeap());

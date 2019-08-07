@@ -1,0 +1,91 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<script src="earthmaths.js"></script>
+</head>
+<body>
+
+<p>Click the button to get your coordinates.</p>
+
+<button onclick="getLocation()">Try It</button>
+
+<p id="demo"></p>
+
+<script>
+var x = document.getElementById("demo");
+
+function getLocation() {
+  if (navigator.geolocation) {
+    navigator.geolocation.watchPosition(showPosition);
+  } else { 
+    x.innerHTML = "Geolocation is not supported by this browser.";
+  }
+}
+    
+function ppN(input, suffix ='') {
+  if (!input) {
+	return '-' + suffix;
+  }
+
+  return input.toFixed(2) + suffix;
+}
+
+function getBalloonData(position)
+{
+console.log('get balloon');
+   var xhr = new XMLHttpRequest();
+   var url = "/status.json";
+// Called whenever the readyState attribute changes 
+xhr.onreadystatechange = function() {
+console.log('changed');
+  // Check if fetch request is done
+  if (xhr.readyState == 4 && xhr.status == 200) { 
+  console.log('ok');
+console.log(xhr.responseText);
+    // Parse the JSON string
+    var balloon = JSON.parse(xhr.responseText);
+    console.log(balloon);
+    // Call the showArtists(), passing in the parsed JSON string
+    showPositionAndBalloon(position, balloon[0]);
+  }
+};
+xhr.open("GET", url, true);
+xhr.send();
+}
+
+function showPosition(position) {
+   getBalloonData(position);
+}
+
+function showPositionAndBalloon(position, balloon) {
+    var d = new Date(position.timestamp);
+    var _pos_info = position_info([position.coords.latitude, position.coords.longitude, position.coords.altitude], [balloon.lat, balloon.lon, balloon.alt]);
+
+    x.innerHTML="Your position<br><br>Latitude: " + position.coords.latitude + 
+    "<br>Longitude: " + position.coords.longitude +
+    "<br>Accuracy: " + ppN(position.coords.accuracy, ' m') +
+    "<br>Altitude: " + ppN(position.coords.altitude, ' m') +
+    "<br>AltitudeAccuracy: " + ppN(position.coords.altitudeAccuracy, ' m') +
+    "<br>Heading: " + ppN(position.coords.heading) +
+    "<br>Speed: " + ppN(position.coords.speed) +
+    "<br>Timestamp: " + d.toTimeString() +
+
+    "<br>Balloon<br>" +
+    "<br>Latitude: " + balloon.lat +
+    "<br>Longitude: " + balloon.lon +
+    "<br>Altitude: " + balloon.alt +
+
+    "<br>Bearing<br>" +
+    "<br>Distance: " + ppN(_pos_info.great_circle_distance, ' m') +
+    "<br>Bearing: " + ppN(_pos_info.bearing) + "( " + _pos_info.bearing_cardinal + " ) " +
+    "<br>Elevation: " + ppN(_pos_info.elevation);
+   
+    
+
+}
+</script>
+
+</body>
+</html>
+

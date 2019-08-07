@@ -10,8 +10,8 @@ led_pout=9
 # TTGO v1:  SDA=4  SCL=15, RST=16 
 # TTGO v2:  SDA=21 SCL=22, RST=16
 # No specification in config file: try autodetection (gpio4 pin level at startup)
-#oled_sda=21
-#oled_scl=22
+oled_sda=21
+oled_scl=22
 oled_rst=16
 #-------------------------------#
 # General config settings
