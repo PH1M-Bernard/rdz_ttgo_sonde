@@ -70,4 +70,12 @@ Compile and Upload code
 Upload data to SPIFFS with Tools -> ESP32 Sketch Data Upload
 
 
+## Buttons wiring
+
+As an example a wiring diagram is in the folder "doc". Please ensure you put the right pin numbers in config.txt (f.e. button_pin=12
+button2_pin=14) 
+Be aware that this repository doesn't support TOUCH buttons. So if you like to use that, use the original repository from this repository is forked.
+
+
+
 

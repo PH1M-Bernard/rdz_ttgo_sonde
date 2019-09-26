@@ -14,10 +14,10 @@ You can setup the depending ports in config.txt, OLED Setup is depending on hard
 You can use the button on the board (not the reset button, the second one) to
 issue some commands. The software distinguishes between several inputs:
 
-- SHORT	Short button press (<1.5 seconds)
-- DOUBLE  Short button press, followed by another button press within 0.5 seconds
-- MID	Medium-length button press (2-4 seconds)
-- LONG	Long button press (>5 seconds)
+- SHORT	Short button press (<0.4 seconds)
+- DOUBLE  Short button press, followed by another button press within 0.3 seconds
+- MID	Medium-length button press (<1 second)
+- LONG	Long button press (>1 second)
 
 ## Wireless configuration
 
