@@ -2,8 +2,8 @@
 # Hardware depending settings
 #-------------------------------#
 # pin: 255=disabled; x=button x+128=touch button
-#button_pin=130
-#button2_pin=142
+button_pin=12
+button2_pin=14
 # No specification in config file: try autodetection (gpio4 pin level at startup)
 #button_pin=0
 #button2_pin=255
@@ -16,7 +16,7 @@ led_pout=9
 oled_sda=21
 oled_scl=22
 oled_rst=16
-#gps_rxd=-1
+gps_rxd=13
 gps_txd=-1
 #-------------------------------#
 # General config settings
@@ -25,8 +25,8 @@ maxsonde=20
 debug=0
 # wifi mode: 1=client in background; 2=AP in background; 3=client on startup, ap if failure
 wifi=3
-# display mode: 1=standard 2=fieldmode 3=field w/sondetype
-display=1
+# display mode: 1=standard 2=fieldmode 3=field w/sondetype 4=gps
+display=4
 #-------------------------------#
 # Spectrum display settings
 #-------------------------------#
@@ -39,7 +39,7 @@ marker=1
 #-------------------------------#
 # APRS settings
 #-------------------------------#
-call=N0CALL
+call=PH1M
 passcode=12345
 #-------------------------------#
 # Sonde specific settings: bandwidth

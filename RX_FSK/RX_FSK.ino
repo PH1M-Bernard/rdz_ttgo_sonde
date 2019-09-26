@@ -1,3 +1,4 @@
+
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <ESPAsyncWebServer.h>
@@ -48,18 +49,18 @@ WiFiClient client;
 
 enum KeyPress { KP_NONE = 0, KP_SHORT, KP_DOUBLE, KP_MID, KP_LONG };
 
-// "doublepress" is now also used to eliminate key glitch on TTGO T-Beam startup (SENSOR_VN/GPIO39)
 struct Button {
   uint8_t pin;
-  uint32_t numberKeyPresses;
   KeyPress pressed;
-  unsigned long keydownTime;
-  int8_t doublepress;
-  bool isTouched;
+  bool shortClickWaiting;
+  int state;// the current reading from the input pin
+  int lastState; // the previous reading from the input pin
+  unsigned long keyDownTime;
 };
-Button button1 = {0, 0, KP_NONE, 0, -1, false};
-Button button2 = {0, 0, KP_NONE, 0, -1, false};
+Button button1 = {12, KP_NONE, false, HIGH, HIGH, 0};
+Button button2 = {14, KP_NONE, false, HIGH, HIGH, 0};
 
+volatile const int debounceDelay = 50; 
 
 static int lastDisplay = 1;
 static int currentDisplay = 1;
@@ -360,7 +361,7 @@ const char *createStatusJSONForm() {
   for (int i = 0; i < sonde.nSonde; i++) {
     SondeInfo *s = &sonde.sondeList[(i + sonde.currentSonde) % sonde.nSonde];
     sprintf(ptr + strlen(ptr), "{\"lat\":\"%.6f\",\"lon\":\"%.6f\",\"alt\":\"%.4f\"}", s->lat, s->lon, s->alt);
-    
+    break; //just support 1 for now
   }
   strcat(ptr, "]");
   
@@ -861,32 +862,6 @@ void touchISR2();
 ///// lets use a timer every 20ms to handle sx1278 FIFO input, that should be fine.
 // Instead create a tast...
 
-Ticker ticker;
-
-#define IS_TOUCH(x) (((x)!=255)&&((x)!=-1)&&((x)&128))
-void initTouch() {
-  if ( !(IS_TOUCH(sonde.config.button_pin) || IS_TOUCH(sonde.config.button2_pin)) ) return; // no touch buttons configured
-
-
-  /*
-   *  ** no. readTouch is not safe to use in ISR!
-      so now using Ticker
-    hw_timer_t *timer = timerBegin(0, 80, true);
-    timerAttachInterrupt(timer, checkTouchStatus, true);
-    timerAlarmWrite(timer, 300000, true);
-    timerAlarmEnable(timer);
-  */
-  ticker.attach_ms(300, checkTouchStatus);
-
-  if ( IS_TOUCH(sonde.config.button_pin) ) {
-    touchAttachInterrupt(sonde.config.button_pin & 0x7f, touchISR, 20);
-    Serial.printf("Initializing touch 1 on pin %d\n", sonde.config.button_pin & 0x7f);
-  }
-  if ( IS_TOUCH(sonde.config.button2_pin) ) {
-    touchAttachInterrupt(sonde.config.button2_pin & 0x7f, touchISR2, 20);
-    Serial.printf("Initializing touch 2 on pin %d\n", sonde.config.button2_pin & 0x7f);
-  }
-}
 
 char buffer[85];
 MicroNMEA nmea(buffer, sizeof(buffer));
@@ -956,107 +931,87 @@ void sx1278Task(void *parameter) {
   }
 }
 
-
-void IRAM_ATTR touchISR() {
-  if (!button1.isTouched) {
-    unsigned long now = my_millis();
-    if (now - button1.keydownTime < 500) button1.doublepress = 1;
-    else button1.doublepress = 0;
-    button1.keydownTime = now;
-    button1.isTouched = true;
-  }
+void IRAM_ATTR button1_isr_handler() {
+   Serial.printf("button1ISR %d", digitalRead(button1.pin));
+  checkButton(&button1);
 }
 
-void IRAM_ATTR touchISR2() {
-  if (!button2.isTouched) {
-    unsigned long now = my_millis();
-    if (now - button2.keydownTime < 500) button2.doublepress = 1;
-    else button2.doublepress = 0;
-    button2.keydownTime = now;
-    button2.isTouched = true;
-  }
+void IRAM_ATTR button2_isr_handler() {
+   Serial.printf("button2ISR %d", digitalRead(button2.pin));
+  checkButton(&button2);
 }
 
-// touchRead in ISR is also a bad idea. Now moved to Ticker task
-void checkTouchButton(Button & button) {
-  if (button.isTouched) {
-    int tmp = touchRead(button.pin & 0x7f);
-    if (tmp > sonde.config.touch_thresh) {
-      button.isTouched = false;
-      unsigned long elapsed = my_millis() - button.keydownTime;
-      if (elapsed > 1500) {
-        if (elapsed < 4000) {
-          button.pressed = KP_MID;
-        }
-        else {
-          button.pressed = KP_LONG;
-        }
-      } else if (button.doublepress) {
-        button.pressed = KP_DOUBLE;
+Ticker buttonShortPressTicker;
+
+void delayedButtonShortPress(uint8_t pin)
+{
+  Serial.printf("[%d] delayedButtonShortPress", pin);
+  
+  if (pin == button1.pin && button1.shortClickWaiting) {
+     button1.shortClickWaiting = false;
+     button1.pressed = KP_SHORT;
+     Serial.println("Keypress: short");
+  } else if (pin == button2.pin && button2.shortClickWaiting) {
+     button2.shortClickWaiting = false;
+     button2.pressed = KP_SHORT;
+     Serial.println("Keypress: short");
+  }
+
+  buttonShortPressTicker.detach();
+}
+
+void checkButton(struct Button *button) {
+  unsigned long now = my_millis();
+ 
+  int reading = digitalRead(button->pin);
+
+  Serial.printf("checkButton %d %d %d %ld", button->pin, reading, button->state,  now);
+  Serial.println("");
+
+  button->state = reading;
+
+  if (button->state == button->lastState) {
+    return;
+  }
+  
+  if (button->state == LOW) {
+    //save start time the key is pressed.
+    button->keyDownTime = now;
+  } else {
+    //button is released. Check timing.
+    unsigned long elapsed = now-button->keyDownTime;
+    Serial.printf("[%d] Time keypress %ld %ld .", button->pin, button->keyDownTime, elapsed);
+    if (elapsed < debounceDelay) {
+       //ignore this press.
+       button->pressed = KP_NONE;
+    }else if (elapsed < 400) {
+      if ( button->shortClickWaiting) {
+           button->shortClickWaiting = false;
+           button->pressed = KP_DOUBLE;
+           Serial.println("Keypress: double");
       } else {
-        button.pressed = KP_SHORT;
+        //if keypress is short don't send the event right away because it can be part of a double click.
+        Serial.println("Keypress: wait for short");
+        buttonShortPressTicker.attach_ms(300, delayedButtonShortPress, button->pin);
+        button->shortClickWaiting = true;
       }
-    }
-  }
-}
-
-void checkTouchStatus() {
-  checkTouchButton(button1);
-  checkTouchButton(button2);
-}
-
-unsigned long bdd1, bdd2;
-void IRAM_ATTR buttonISR() {
-  if (digitalRead(button1.pin) == 0) { // Button down
-    unsigned long now = my_millis();
-    if (now - button1.keydownTime < 500) {
-      // Double press
-      button1.doublepress = 1;
-      bdd1 = now; bdd2 = button1.keydownTime;
+    } else if (elapsed < 1000) {
+      button->pressed = KP_MID;
+      Serial.println("Keypress: mid");
     } else {
-      button1.doublepress = 0;
+      button->pressed = KP_LONG;
+      Serial.println("Keypress: long");
     }
-    button1.numberKeyPresses += 1;
-    button1.keydownTime = now;
-  } else { //Button up
-    unsigned long now = my_millis();
-    if (button1.doublepress == -1) return;   // key was never pressed before, ignore button up
-    unsigned int elapsed = now - button1.keydownTime;
-    if (elapsed > 1500) {
-      if (elapsed < 4000) {
-        button1.pressed = KP_MID;
-      }
-      else {
-        button1.pressed = KP_LONG;
-      }
-    } else {
-      if (button1.doublepress) button1.pressed = KP_DOUBLE;
-      else button1.pressed = KP_SHORT;
-    }
-    button1.numberKeyPresses += 1;
-    button1.keydownTime = now;
+    
   }
+
+  // save the reading. Next time through the loop, it'll be the lastButtonState:
+  button->lastState = button->state;
 }
 
-int getKeyPress() {
-  KeyPress p = button1.pressed;
-  button1.pressed = KP_NONE;
-  int x = digitalRead(button1.pin);
-  Serial.printf("Debug: bdd1=%ld, bdd2=%ld\b", bdd1, bdd2);
-
-  Serial.printf("button1 press (dbl:%d) (now:%d): %d at %ld (%d)\n", button1.doublepress, x, p, button1.keydownTime, button1.numberKeyPresses);
-  return p;
-}
-
-int getKey2Press() {
-  KeyPress p = button2.pressed;
-  button2.pressed = KP_NONE;
-  Serial.printf("button2 press: %d at %ld (%d)\n", p, button2.keydownTime, button2.numberKeyPresses);
-  return p;
-}
-int hasKeyPress() {
-  return button1.pressed || button2.pressed;
-}
+/**
+ * This function is called from SondeLib. First it checks if button1 as a keypress. After that it checked for button2. 
+ */
 int getKeyPressEvent() {
   int p = getKeyPress();
   if (p == KP_NONE) {
@@ -1066,6 +1021,18 @@ int getKeyPressEvent() {
     return p + 4;
   }
   return p;  /* map KP_x to EVT_KEY1_x / EVT_KEY2_x*/
+}
+
+int getKeyPress() {
+  KeyPress p = button1.pressed;
+  button1.pressed = KP_NONE;
+  return p;
+}
+
+int getKey2Press() {
+  KeyPress p = button2.pressed;
+  button2.pressed = KP_NONE;
+  return p;
 }
 
 extern int initlevels[40];
@@ -1099,17 +1066,16 @@ void setup()
   LORA_LED = sonde.config.led_pout;
   button1.pin = sonde.config.button_pin;
   button2.pin = sonde.config.button2_pin;
-  if (button1.pin != 0xff)
+  if (button1.pin != 0xff) {
     pinMode(button1.pin, INPUT);  // configure as input if not disabled
-  if (button2.pin != 0xff)
-    pinMode(button2.pin, INPUT);  // configure as input if not disabled
-
-  // Handle button press
-  if ( (button1.pin & 0x80) == 0) {
-    attachInterrupt( button1.pin, buttonISR, CHANGE);
+    attachInterrupt( digitalPinToInterrupt(button1.pin), button1_isr_handler, CHANGE);
     Serial.printf("button1.pin is %d, attaching interrupt\n", button1.pin);
   }
-  initTouch();
+  if (button2.pin != 0xff) {
+    pinMode(button2.pin, INPUT);  // configure as input if not disabled
+    attachInterrupt( digitalPinToInterrupt(button2.pin), button2_isr_handler, CHANGE);
+    Serial.printf("button2.pin is %d, attaching interrupt\n", button2.pin);
+  }
 
   u8x8 = new U8X8_SSD1306_128X64_NONAME_SW_I2C(/* clock=*/ sonde.config.oled_scl, /* data=*/ sonde.config.oled_sda, /* reset=*/ sonde.config.oled_rst); // Unbuffered, basic graphics, software I2C
   u8x8->begin();
@@ -1228,6 +1194,7 @@ void setup()
 
   WiFi.onEvent(WiFiEvent);
   getKeyPress();    // clear key buffer
+  getKey2Press();    // clear key buffer
 }
 
 void enterMode(int mode) {

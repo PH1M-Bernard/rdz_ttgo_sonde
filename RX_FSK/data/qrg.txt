@@ -2,4 +2,7 @@
 # Type (4=RS41, 6=DFM normal, DFM-06, 9=DFM inverted, DFM-09)
 #
 403.900 4 + De Bilt
-403.900 4 + De Bilt
+403.500 4 + Uccle
+404.100 4 + Norderney
+405.300 4 + Essen
+402.870 6 + Beauvechain
