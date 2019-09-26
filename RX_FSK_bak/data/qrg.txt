@@ -1,5 +1,0 @@
-# Frequency in Mhz (format nnn.nnn)
-# Type (4=RS41, 6=DFM normal, DFM-06, 9=DFM inverted, DFM-09)
-#
-403.900 4 + De Bilt
-403.900 4 + De Bilt
