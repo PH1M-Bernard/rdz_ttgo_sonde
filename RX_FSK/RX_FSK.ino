@@ -20,6 +20,7 @@
 #include "geteph.h"
 #include "rs92gps.h"
 
+
 // UNCOMMENT one of the constructor lines below
 U8X8_SSD1306_128X64_NONAME_SW_I2C *u8x8 = NULL; // initialize later after reading config file
 //U8X8_SSD1306_128X64_NONAME_SW_I2C u8x8(/* clock=*/ OLED_SCL, /* data=*/ OLED_SDA, /* reset=*/ OLED_RST); // Unbuffered, basic graphics, software I2C
@@ -459,7 +460,6 @@ void addConfigNumEntry(char *ptr, int idx, const char *label, int *value) {
 void addConfigButtonEntry(char *ptr, int idx, const char *label, int *value) {
   sprintf(ptr + strlen(ptr), "<tr><td>%s</td><td><input name=\"CFG%d\" type=\"text\" size=\"3\" value=\"%d\"/>",
           label, idx, 127 & *value);
-  sprintf(ptr + strlen(ptr), "<input type=\"checkbox\" name=\"TO%d\"%s> Touch </td></tr>\n", idx, 128 & *value ? " checked" : "");
 }
 void addConfigTypeEntry(char *ptr, int idx, const char *label, int *value) {
   // TODO
@@ -528,15 +528,6 @@ const char *handleConfigPost(AsyncWebServerRequest *request) {
     AsyncWebParameter *value = request->getParam(label, true);
     if (!value) continue;
     String strvalue = value->value();
-    if (config_list[idx].type == -4) {  // input button port with "touch" checkbox
-      char tmp[10];
-      snprintf(tmp, 10, "TO%d", idx);
-      AsyncWebParameter *touch = request->getParam(tmp, true);
-      if (touch) {
-        int i = atoi(strvalue.c_str()) + 128;
-        strvalue = String(i);
-      }
-    }
     Serial.printf("Processing  %s=%s\n", config_list[idx].name, strvalue.c_str());
     f.printf("%s=%s\n", config_list[idx].name, strvalue.c_str());
   }
@@ -722,6 +713,7 @@ void SetupAsyncServer() {
   server.on("/config.html", HTTP_GET,  [](AsyncWebServerRequest * request) {
     request->send(200, "text/html", createConfigForm());
   });
+  
   server.on("/config.html", HTTP_POST, [](AsyncWebServerRequest * request) {
     handleConfigPost(request);
     request->send(200, "text/html", createConfigForm());
@@ -757,19 +749,14 @@ void SetupAsyncServer() {
     request->send(200, "text/html", createEditForm(request->getParam(0)->value()));
   });
 
+  // Route to load config.txt file
+  server.on("/config.txt", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send(SPIFFS, "/config.txt", "text/txt");
+  });
+
   // Route to load style.css file
   server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest * request) {
     request->send(SPIFFS, "/style.css", "text/css");
-  });
-
-  // Route to load earthmaths.js file
-  server.on("/earthmaths.js", HTTP_GET, [](AsyncWebServerRequest * request) {
-    request->send(SPIFFS, "/earthmaths.js", "text/javascript");
-  });
-
-    // Route to load location.html file
-  server.on("/location.html", HTTP_GET, [](AsyncWebServerRequest * request) {
-    request->send(SPIFFS, "/location.html", "text/html");
   });
   
   // Route to set GPIO to HIGH
@@ -972,6 +959,7 @@ void checkButton(struct Button *button) {
 
   if (button->state == button->lastState) {
     return;
+    
   }
   
   if (button->state == LOW) {
