@@ -39,7 +39,7 @@ marker=1
 #-------------------------------#
 # APRS settings
 #-------------------------------#
-call=PH1M
+call=CALL
 passcode=12345
 #-------------------------------#
 # Sonde specific settings: bandwidth
