@@ -2,8 +2,8 @@
 # Hardware depending settings
 #-------------------------------#
 # pin: 255=disabled; x=button x+128=touch button
-button_pin=12
-button2_pin=14
+button_pin=14
+button2_pin=15
 # No specification in config file: try autodetection (gpio4 pin level at startup)
 #button_pin=0
 #button2_pin=255
