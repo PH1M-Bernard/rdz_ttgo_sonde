@@ -76,16 +76,6 @@ tcp.symbol=/O
 tcp.highrate=20
 tcp.idformat=0
 
-
-#------------------------------#
-# Added values just for test. 
-# Values will be removed maybe
-# in the future
-#------------------------------#
-showafc=0
-freqofs=0
-touch_thresh=70
-
 #-------------------------------#
 # EOF
 #-------------------------------#
