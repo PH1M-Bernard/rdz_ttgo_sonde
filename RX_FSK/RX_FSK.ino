@@ -751,14 +751,14 @@ void SetupAsyncServer() {
     request->send(SPIFFS, "/config.txt", "text/txt");
   });
 
-  // Route to load config.txt file
+  // Route to load qrg.txt file
   server.on("/qrg.txt", HTTP_GET, [](AsyncWebServerRequest * request) {
     request->send(SPIFFS, "/qrg.txt", "text/txt");
   });
 
-  // Route to load config.txt file
-  server.on("/network.txt", HTTP_GET, [](AsyncWebServerRequest * request) {
-    request->send(SPIFFS, "/network.txt", "text/txt");
+  // Route to load networks.txt file
+  server.on("/networks.txt", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send(SPIFFS, "/networks.txt", "text/txt");
   });
 
   // Route to load style.css file
