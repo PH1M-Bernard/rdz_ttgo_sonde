@@ -46,7 +46,6 @@ boolean connected = false;
 WiFiUDP udp;
 WiFiClient client;
 
-
 enum KeyPress { KP_NONE = 0, KP_SHORT, KP_DOUBLE, KP_MID, KP_LONG };
 
 struct Button {
@@ -110,7 +109,6 @@ const String sondeTypeSelect(int activeType) {
   }
   return sts;
 }
-
 
 //trying to work around
 //"assertion "heap != NULL && "free() target pointer is outside heap areas"" failed:"
@@ -751,6 +749,16 @@ void SetupAsyncServer() {
   // Route to load config.txt file
   server.on("/config.txt", HTTP_GET, [](AsyncWebServerRequest * request) {
     request->send(SPIFFS, "/config.txt", "text/txt");
+  });
+
+  // Route to load config.txt file
+  server.on("/qrg.txt", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send(SPIFFS, "/qrg.txt", "text/txt");
+  });
+
+  // Route to load config.txt file
+  server.on("/network.txt", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send(SPIFFS, "/network.txt", "text/txt");
   });
 
   // Route to load style.css file
